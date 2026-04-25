@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pac-Man</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="game-container">
+    <h1 class="title">PAC-MAN</h1>
+    <div class="hud">
+      <div class="hud-item">SCORE: <span id="score">0</span></div>
+      <div class="hud-item">HIGH: <span id="highscore">0</span></div>
+      <div class="hud-item">LIVES: <span id="lives">3</span></div>
+      <div class="hud-item">LEVEL: <span id="level">1</span></div>
+    </div>
+    <canvas id="game" width="560" height="620"></canvas>
+    <div id="overlay" class="overlay hidden">
+      <div id="overlay-text">READY!</div>
+      <button id="start-btn">START</button>
+    </div>
+    <p class="instructions">
+      Use <strong>Arrow Keys</strong> or <strong>WASD</strong> to move.
+      Eat all pellets to win. Power pellets let you eat ghosts!
+    </p>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
