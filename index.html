@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>CCode Pac-Man</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23ffe45c'/%3E%3Cpath d='M32 32 L58 18 A30 30 0 1 0 58 46 Z' fill='%23060819'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="style.css?v=6" />
+  <link rel="stylesheet" href="style.css?v=7" />
 </head>
 <body>
   <main class="app-shell" aria-label="CCode Pac-Man game">
@@ -19,7 +19,7 @@
       </div>
       <div class="top-actions">
         <button id="pauseBtn" class="small-btn" type="button">Pause</button>
-        <button id="soundBtn" class="small-btn" type="button" aria-pressed="true">Sound On</button>
+        <button id="soundBtn" class="small-btn" type="button" aria-pressed="true" aria-label="Toggle sound">🔊</button>
       </div>
     </header>
 
@@ -35,14 +35,14 @@
       <canvas id="game" width="448" height="496" aria-label="Playable Pac-Man maze"></canvas>
       <div id="message" class="message">
         <div id="messageTitle">Ready?</div>
-        <p id="messageText">Use the buttons, swipes, WASD, or arrow keys. Ghosts patrol immediately and keep moving during play.</p>
+        <p id="messageText">Chomp every pellet. Grab a power dot to bite back. Watch for the bonus fruit.</p>
         <button id="startBtn" type="button">Start Game</button>
       </div>
     </section>
 
     <div class="info-row">
       <span id="pellets">Pellets: 0</span>
-      <span id="hint">Swipe on the maze or hold a direction.</span>
+      <span id="hint">Swipe the maze · hold a direction · WASD or arrow keys.</span>
     </div>
 
     <nav class="controls" aria-label="Game controls">
@@ -59,6 +59,6 @@
     </nav>
   </main>
 
-  <script src="game.js?v=6"></script>
+  <script src="game.js?v=7"></script>
 </body>
 </html>
