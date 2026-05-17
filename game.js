@@ -6,9 +6,8 @@
   const ROWS = 31;
   const W = COLS * TILE;
   const H = ROWS * TILE;
-  const HIGH_KEY = 'ccode-pacman-high-v7';
+  const HIGH_KEY = 'ccode-pacman-high-v8';
 
-  // Maze layout — characters: # wall, . pellet, o power, - ghost door, space empty
   const RAW = [
     '############################',
     '#............##............#',
@@ -57,11 +56,11 @@
     fruitLeaf: '#7eff8e'
   };
   const DIRS = {
-    up: { x: 0, y: -1, name: 'up' },
-    down: { x: 0, y: 1, name: 'down' },
-    left: { x: -1, y: 0, name: 'left' },
-    right: { x: 1, y: 0, name: 'right' },
-    none: { x: 0, y: 0, name: 'none' }
+    up:    { x: 0, y: -1, name: 'up' },
+    down:  { x: 0, y: 1,  name: 'down' },
+    left:  { x: -1, y: 0, name: 'left' },
+    right: { x: 1, y: 0,  name: 'right' },
+    none:  { x: 0, y: 0,  name: 'none' }
   };
   const DIR_ORDER = [DIRS.up, DIRS.left, DIRS.down, DIRS.right];
   const $ = (id) => document.getElementById(id);
@@ -147,7 +146,6 @@
     totalPellets = pellets;
   }
 
-  // BFS to nearest passable tile — guarantees ghosts NEVER spawn in walls
   function nearestOpen(tx, ty, forGhost = true) {
     tx = clamp(Math.round(tx), 0, COLS - 1);
     ty = clamp(Math.round(ty), 0, ROWS - 1);
@@ -171,6 +169,7 @@
     goal = nearestOpen(goal.x, goal.y, true);
     const startKey = `${start.x},${start.y}`;
     const goalKey = `${goal.x},${goal.y}`;
+    if (startKey === goalKey) return [start];
     const q = [start];
     const parent = new Map([[startKey, null]]);
     while (q.length) {
@@ -178,6 +177,7 @@
       const pk = `${p.x},${p.y}`;
       if (pk === goalKey) break;
       for (const d of DIR_ORDER) {
+        // Disallow immediate reverse on the FIRST step only
         if (parent.get(pk) === null && firstDir !== DIRS.none && sameDir(d, opposite(firstDir))) continue;
         const nx = p.x + d.x, ny = p.y + d.y, nk = `${nx},${ny}`;
         if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || parent.has(nk) || !passable(nx, ny, true)) continue;
@@ -217,10 +217,9 @@
     }
     movePixels(dt, forGhost = false) {
       if (this.dir === DIRS.none) { this.movedLastFrame = 0; return false; }
-      const ox = this.x, oy = this.y;
+      const ox = this.x;
       let nx = this.x + this.dir.x * this.speed * dt;
       let ny = this.y + this.dir.y * this.speed * dt;
-      // Wrap-around tunnel
       if (nx < -TILE / 2) nx = W + TILE / 2;
       if (nx > W + TILE / 2) nx = -TILE / 2;
       const tx = tileFromPx(clamp(nx, 0, W - 1));
@@ -232,7 +231,7 @@
       }
       this.x = nx; this.y = ny;
       this.sync();
-      this.movedLastFrame = Math.hypot(this.x - ox, this.y - oy);
+      this.movedLastFrame = Math.hypot(this.x - ox, this.y - this.y);
       return true;
     }
   }
@@ -296,7 +295,6 @@
       ctx.rotate(rot);
       const r = TILE * 0.48;
       const open = 0.08 + Math.abs(Math.sin(this.mouth)) * 0.30;
-      // Glow + body
       ctx.fillStyle = COLORS.yellow;
       ctx.shadowBlur = 16; ctx.shadowColor = COLORS.yellow;
       ctx.beginPath();
@@ -304,7 +302,6 @@
       ctx.arc(0, 0, r, open * Math.PI, (2 - open) * Math.PI);
       ctx.closePath();
       ctx.fill();
-      // Eye
       ctx.shadowBlur = 0;
       ctx.fillStyle = '#1a1a1a';
       ctx.beginPath();
@@ -324,7 +321,6 @@
       this.mode = 'chase';
       this.phase = Math.random() * Math.PI * 2;
       this.path = []; this.pathStep = 1; this.repathTimer = 0;
-      this.forceRepath();
     }
     frighten() {
       if (this.mode === 'eaten') return;
@@ -351,7 +347,6 @@
     }
     forceRepath() {
       this.sync();
-      // CRITICAL FIX: if we're somehow standing on a wall, jump to nearest open tile first
       if (!passable(this.tx, this.ty, true)) {
         const open = nearestOpen(this.tx, this.ty, true);
         this.tx = open.x; this.ty = open.y;
@@ -359,11 +354,11 @@
       }
       const goal = nearestOpen(this.target().x, this.target().y, true);
       this.path = findPath({ x: this.tx, y: this.ty }, goal, this.dir);
-      this.pathStep = Math.min(1, this.path.length - 1);
+      this.pathStep = 1;
       if (this.path.length > 1) {
         this.dir = dirBetween(this.path[0], this.path[1]);
       } else {
-        // No path found — pick ANY valid direction so we don't freeze
+        // No path — pick any open direction so we keep moving
         const opts = availableDirs(this.tx, this.ty, this.dir, true, true);
         if (opts.length) this.dir = opts[Math.floor(Math.random() * opts.length)];
       }
@@ -373,6 +368,21 @@
       const dirs = choices.length ? choices : availableDirs(this.tx, this.ty, this.dir, true, true);
       if (dirs.length) this.dir = dirs[Math.floor(Math.random() * dirs.length)];
     }
+    // Picks the best direction at an intersection by greedy-distance to target
+    pickBestDir(target) {
+      const opts = availableDirs(this.tx, this.ty, this.dir, true, false);
+      if (!opts.length) {
+        const all = availableDirs(this.tx, this.ty, this.dir, true, true);
+        return all.length ? all[0] : DIRS.none;
+      }
+      let best = opts[0], bestDist = Infinity;
+      for (const d of opts) {
+        const nx = this.tx + d.x, ny = this.ty + d.y;
+        const dist = (nx - target.x) ** 2 + (ny - target.y) ** 2;
+        if (dist < bestDist) { bestDist = dist; best = d; }
+      }
+      return best;
+    }
     update(dt, demo = false) {
       this.phase += dt * 6;
       this.repathTimer -= dt;
@@ -381,38 +391,74 @@
       else                              this.speed = 96 + Math.min(30, level * 5);
       if (demo) this.speed *= 0.85;
 
-      if (this.atCenter(2.8)) {
+      // Decision-making happens at tile centers, NOT every frame.
+      // This is the classic Pac-Man approach: ghost commits to a direction
+      // until it reaches the next tile center, then picks a new direction.
+      if (this.atCenter(2.5)) {
         this.snap();
-        if (this.mode === 'fright') {
-          if (this.repathTimer <= 0 || !passable(this.tx + this.dir.x, this.ty + this.dir.y, true)) {
-            this.chooseRandomTurn();
-            this.repathTimer = 0.42;
-          }
-        } else if (this.repathTimer <= 0 || !this.path[this.pathStep] || !passable(this.tx + this.dir.x, this.ty + this.dir.y, true)) {
-          this.forceRepath();
-          this.repathTimer = this.mode === 'eaten' ? 0.28 : 0.7;
-        } else {
+
+        // If we're on the next tile of the current path, advance.
+        if (this.path.length > 1) {
           const next = this.path[this.pathStep];
-          if (next && this.tx === next.x && this.ty === next.y) this.pathStep++;
+          if (next && this.tx === next.x && this.ty === next.y) {
+            this.pathStep++;
+          }
+        }
+
+        // Need a new path? (no path / consumed it / blocked next step / time-up)
+        const needRepath =
+          this.pathStep >= this.path.length ||
+          this.path.length < 2 ||
+          this.repathTimer <= 0;
+
+        if (this.mode === 'fright') {
+          // Frightened ghosts just turn randomly at intersections
+          const ahead = passable(this.tx + this.dir.x, this.ty + this.dir.y, true);
+          if (!ahead) {
+            this.chooseRandomTurn();
+          } else {
+            const turns = availableDirs(this.tx, this.ty, this.dir, true, false);
+            if (turns.length > 1 && Math.random() < 0.35) {
+              this.dir = turns[Math.floor(Math.random() * turns.length)];
+            }
+          }
+        } else if (needRepath) {
+          this.forceRepath();
+          this.repathTimer = this.mode === 'eaten' ? 0.35 : 0.85;
+        } else {
           const step = this.path[this.pathStep];
-          if (step) this.dir = dirBetween({ x: this.tx, y: this.ty }, step);
+          if (step) {
+            const newDir = dirBetween({ x: this.tx, y: this.ty }, step);
+            if (newDir !== DIRS.none) this.dir = newDir;
+          }
+        }
+
+        // Safety: if direction points into a wall, pick best toward target
+        if (this.dir === DIRS.none || !passable(this.tx + this.dir.x, this.ty + this.dir.y, true)) {
+          this.dir = this.pickBestDir(this.target());
         }
       }
 
       const moved = this.movePixels(dt, true);
       if (!moved) {
         this.stuck += dt;
-        this.forceRepath();
-        this.movePixels(dt * 2.5, true);
+        // Try a fresh direction at the current center
+        this.snap();
+        this.dir = this.pickBestDir(this.target());
+        if (this.dir === DIRS.none) {
+          const opts = availableDirs(this.tx, this.ty, DIRS.none, true, true);
+          if (opts.length) this.dir = opts[0];
+        }
+        this.movePixels(dt, true);
       } else {
         this.stuck = 0;
       }
 
-      // Safety net: if a ghost is truly stuck, teleport to nearest open tile and pick any move
-      if (this.stuck > 0.45 || this.dir === DIRS.none) {
-        const open = nearestOpen(this.tx, this.ty, true);
-        this.x = center(open.x); this.y = center(open.y);
-        this.sync();
+      // Last-resort teleport: if we've been stuck for half a second, jump out
+      if (this.stuck > 0.5) {
+        const open = nearestOpen(this.tx + 1, this.ty, true);
+        this.tx = open.x; this.ty = open.y;
+        this.x = center(this.tx); this.y = center(this.ty);
         this.chooseRandomTurn();
         this.stuck = 0;
       }
@@ -459,25 +505,25 @@
     }
   }
 
+  // Find a guaranteed-passable spawn near a desired tile (for ghosts)
+  function pickSpawn(preferTx, preferTy) {
+    const o = nearestOpen(preferTx, preferTy, true);
+    return { x: o.x, y: o.y };
+  }
+
   function spawnActors() {
     pac = new Pac();
-    // FIX: previous spawn tiles like (6,5) and (21,5) were INSIDE walls.
-    // Use guaranteed corridor tiles around the maze.
-    ghosts = [
-      new Ghost('blinky', 13, 11, COLORS.red,    { x: 26, y: 1  }, DIRS.left),
-      new Ghost('pinky',  14, 11, COLORS.pink,   { x: 1,  y: 1  }, DIRS.right),
-      new Ghost('inky',   13, 14, COLORS.cyan,   { x: 26, y: 29 }, DIRS.up),
-      new Ghost('clyde',  14, 14, COLORS.orange, { x: 1,  y: 29 }, DIRS.up)
+    // SPREAD OUT at known-open corridor tiles, far from each other so they
+    // don't all path to the same intersection and oscillate together.
+    const spawnsRaw = [
+      { name: 'blinky', t: pickSpawn(1, 5),   color: COLORS.red,    scatter: { x: 26, y: 1  }, dir: DIRS.right },
+      { name: 'pinky',  t: pickSpawn(26, 5),  color: COLORS.pink,   scatter: { x: 1,  y: 1  }, dir: DIRS.left  },
+      { name: 'inky',   t: pickSpawn(1, 26),  color: COLORS.cyan,   scatter: { x: 26, y: 29 }, dir: DIRS.right },
+      { name: 'clyde',  t: pickSpawn(26, 26), color: COLORS.orange, scatter: { x: 1,  y: 29 }, dir: DIRS.left  }
     ];
-    // After construction, force every ghost to a guaranteed-open tile in case
-    // the maze layout still trapped one. This is the bulletproof step.
-    ghosts.forEach((g) => {
-      const open = nearestOpen(g.tx, g.ty, true);
-      g.tx = open.x; g.ty = open.y;
-      g.x = center(g.tx); g.y = center(g.ty);
-      g.spawn = { x: g.tx, y: g.ty };
-      g.forceRepath();
-    });
+    ghosts = spawnsRaw.map(s => new Ghost(s.name, s.t.x, s.t.y, s.color, s.scatter, s.dir));
+    // Immediately give each ghost a path so they start moving on frame 1
+    ghosts.forEach((g) => g.forceRepath());
   }
 
   function resetGame() {
@@ -595,7 +641,6 @@
   function update(dt) {
     frame++;
     if (state === 'ready') {
-      // Ghosts patrol during the "Ready" screen so the demo feels alive
       ghosts.forEach((g) => g.update(dt, true));
       updateEffects(dt);
       return;
@@ -699,8 +744,6 @@
     }
   }
 
-  // BRIGHT FRUIT — no more washed-out white circle background.
-  // Each fruit is drawn directly with its own vivid colors + glow.
   function drawFruit() {
     const y = fruit.y + Math.sin(frame / 7) * 2;
     ctx.save();
@@ -709,28 +752,23 @@
     ctx.shadowColor = fruit.color;
 
     if (fruit.kind === 'cherry') {
-      // Two glossy red cherries with green stem + leaf
       ctx.fillStyle = '#ff2e5f';
       ctx.beginPath(); ctx.arc(-5, 3, 5.5, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(5, 3, 5.5, 0, Math.PI * 2); ctx.fill();
-      // Highlights
       ctx.fillStyle = '#ffd1dd';
       ctx.beginPath(); ctx.arc(-7, 1, 1.4, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(3, 1, 1.4, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
-      // Stems
       ctx.strokeStyle = '#1aa653';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(-5, -2); ctx.quadraticCurveTo(0, -11, 5, -2);
       ctx.stroke();
-      // Leaf
       ctx.fillStyle = COLORS.fruitLeaf;
       ctx.beginPath();
       ctx.ellipse(2, -9, 3.5, 1.8, -0.4, 0, Math.PI * 2);
       ctx.fill();
     } else if (fruit.kind === 'orange') {
-      // Vivid orange globe with leaf
       const grad = ctx.createRadialGradient(-2, -2, 1, 0, 0, 8);
       grad.addColorStop(0, '#ffcf6e');
       grad.addColorStop(1, '#ff8410');
@@ -744,7 +782,6 @@
       ctx.ellipse(3, -7, 4, 2, -0.55, 0, Math.PI * 2);
       ctx.fill();
     } else if (fruit.kind === 'bell') {
-      // Golden bell with clapper
       const grad = ctx.createLinearGradient(0, -8, 0, 8);
       grad.addColorStop(0, '#fff5a8');
       grad.addColorStop(1, '#ff9b1f');
@@ -761,7 +798,6 @@
       ctx.fillStyle = '#ffe45c';
       ctx.beginPath(); ctx.arc(0, 7.5, 1.6, 0, Math.PI * 2); ctx.fill();
     } else if (fruit.kind === 'key') {
-      // Cyan glowing key
       ctx.strokeStyle = '#0bbcff';
       ctx.fillStyle = '#0bbcff';
       ctx.lineWidth = 3;
@@ -775,13 +811,11 @@
       ctx.fillStyle = '#bff2ff';
       ctx.beginPath(); ctx.arc(-4, 0, 1.6, 0, Math.PI * 2); ctx.fill();
     } else {
-      // berry / strawberry
       const grad = ctx.createRadialGradient(-2, -2, 1, 0, 1, 8);
       grad.addColorStop(0, '#ff8edd');
       grad.addColorStop(1, '#c41a96');
       ctx.fillStyle = grad;
       ctx.beginPath(); ctx.arc(0, 1, 8, 0, Math.PI * 2); ctx.fill();
-      // Seeds
       ctx.shadowBlur = 0;
       ctx.fillStyle = '#fff3c4';
       for (let i = 0; i < 6; i++) {
@@ -790,7 +824,6 @@
         ctx.arc(Math.cos(ang) * 3.6, 1 + Math.sin(ang) * 3.6, 0.9, 0, Math.PI * 2);
         ctx.fill();
       }
-      // Leaf cap
       ctx.fillStyle = COLORS.fruitLeaf;
       ctx.beginPath();
       ctx.moveTo(-6, -5); ctx.lineTo(0, -9); ctx.lineTo(6, -5);
@@ -916,7 +949,8 @@
         fruit: fruit ? { kind: fruit.kind } : null,
         ghosts: ghosts.map((g) => ({
           name: g.name, tx: g.tx, ty: g.ty, dir: g.dir.name,
-          mode: g.mode, moved: Number(g.movedLastFrame.toFixed(2))
+          mode: g.mode, moved: Number(g.movedLastFrame.toFixed(2)),
+          pathLen: g.path.length, pathStep: g.pathStep
         }))
       };
     }, 'loop');
