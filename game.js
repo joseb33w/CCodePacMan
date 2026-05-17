@@ -6,7 +6,7 @@
   const ROWS = 31;
   const W = COLS * TILE;
   const H = ROWS * TILE;
-  const HIGH_KEY = 'ccode-pacman-high-v8';
+  const HIGH_KEY = 'ccode-pacman-high-v9';
 
   const RAW = [
     '############################',
@@ -177,7 +177,6 @@
       const pk = `${p.x},${p.y}`;
       if (pk === goalKey) break;
       for (const d of DIR_ORDER) {
-        // Disallow immediate reverse on the FIRST step only
         if (parent.get(pk) === null && firstDir !== DIRS.none && sameDir(d, opposite(firstDir))) continue;
         const nx = p.x + d.x, ny = p.y + d.y, nk = `${nx},${ny}`;
         if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || parent.has(nk) || !passable(nx, ny, true)) continue;
@@ -191,48 +190,69 @@
     return path.reverse();
   }
 
+  // ───────── PLAYER + GHOSTS share a movement model ─────────
   class Entity {
     constructor(tx, ty, color) {
       this.x = center(tx); this.y = center(ty);
       this.tx = tx; this.ty = ty;
       this.dir = DIRS.none; this.next = DIRS.none;
       this.color = color; this.speed = 96;
-      this.movedLastFrame = 0; this.stuck = 0;
+      this.justCrossedCenter = false;
     }
     sync() {
       this.tx = tileFromPx(clamp(this.x, 0, W - 1));
       this.ty = tileFromPx(clamp(this.y, 0, H - 1));
     }
-    centerError() {
-      this.sync();
-      return { dx: this.x - center(this.tx), dy: this.y - center(this.ty) };
-    }
-    atCenter(slack = 2.2) {
-      const e = this.centerError();
-      return Math.abs(e.dx) <= slack && Math.abs(e.dy) <= slack;
-    }
-    snap() {
-      this.sync();
-      this.x = center(this.tx); this.y = center(this.ty);
-    }
-    movePixels(dt, forGhost = false) {
-      if (this.dir === DIRS.none) { this.movedLastFrame = 0; return false; }
-      const ox = this.x;
+    /**
+     * Returns true if we crossed the center of our current tile in this step.
+     * Used to decide WHEN ghosts re-pick direction (only at tile centers).
+     */
+    moveStep(dt, forGhost) {
+      if (this.dir === DIRS.none) { this.justCrossedCenter = false; return false; }
+      const oldX = this.x, oldY = this.y;
       let nx = this.x + this.dir.x * this.speed * dt;
       let ny = this.y + this.dir.y * this.speed * dt;
+      // Wrap-around tunnel
       if (nx < -TILE / 2) nx = W + TILE / 2;
       if (nx > W + TILE / 2) nx = -TILE / 2;
-      const tx = tileFromPx(clamp(nx, 0, W - 1));
-      const ty = tileFromPx(clamp(ny, 0, H - 1));
-      if (!passable(tx, ty, forGhost)) {
-        this.snap();
-        this.movedLastFrame = 0;
-        return false;
+
+      // Look ahead by half a tile in the direction of motion — if the tile
+      // half-way ahead is a wall, stop AT the wall edge (i.e. at the current
+      // tile center). This is the classic Pac-Man wall stop.
+      const aheadX = nx + this.dir.x * (TILE / 2 - 0.5);
+      const aheadY = ny + this.dir.y * (TILE / 2 - 0.5);
+      const aheadTx = tileFromPx(clamp(aheadX, 0, W - 1));
+      const aheadTy = tileFromPx(clamp(aheadY, 0, H - 1));
+      if (!passable(aheadTx, aheadTy, forGhost)) {
+        // Stop at the center of the current tile (don't push into the wall)
+        nx = center(this.tx);
+        ny = center(this.ty);
       }
+
       this.x = nx; this.y = ny;
       this.sync();
-      this.movedLastFrame = Math.hypot(this.x - ox, this.y - this.y);
-      return true;
+
+      // Detect if we just crossed our tile center.
+      // Cross test: the segment (oldPos -> newPos) contains the center line of
+      // our current tile. For horizontal motion, check whether (cx - oldX) and
+      // (cx - newX) have opposite signs OR newX is exactly at center.
+      const cx = center(this.tx), cy = center(this.ty);
+      this.justCrossedCenter = false;
+      if (this.dir.x !== 0) {
+        const dxOld = oldX - cx, dxNew = nx - cx;
+        // Crossed if sign changed OR we landed on or past center while moving toward it
+        if ((dxOld <= 0 && dxNew >= 0) || (dxOld >= 0 && dxNew <= 0)) this.justCrossedCenter = true;
+      } else if (this.dir.y !== 0) {
+        const dyOld = oldY - cy, dyNew = ny - cy;
+        if ((dyOld <= 0 && dyNew >= 0) || (dyOld >= 0 && dyNew <= 0)) this.justCrossedCenter = true;
+      }
+      return (Math.abs(nx - oldX) + Math.abs(ny - oldY)) > 0.001;
+    }
+    /** Snap exactly to the center of the current tile. Use sparingly. */
+    snapToCenter() {
+      this.sync();
+      this.x = center(this.tx);
+      this.y = center(this.ty);
     }
   }
 
@@ -247,20 +267,25 @@
       this.mouth += dt * 10;
       const next = this.next;
       if (next !== DIRS.none) {
-        const e = this.centerError();
+        // Can the player turn? Yes if we're close to a tile center perpendicular
+        // to the requested direction AND the next tile in that direction is open.
+        this.sync();
+        const cx = center(this.tx), cy = center(this.ty);
+        const dx = this.x - cx, dy = this.y - cy;
         const reverse = this.dir !== DIRS.none && sameDir(next, opposite(this.dir));
         if (reverse && passable(this.tx + next.x, this.ty + next.y, false)) {
           this.dir = next;
-        } else if (next.x && Math.abs(e.dy) <= TILE * 0.42 && passable(this.tx + next.x, this.ty, false)) {
-          this.y = center(this.ty); this.dir = next;
-        } else if (next.y && Math.abs(e.dx) <= TILE * 0.42 && passable(this.tx, this.ty + next.y, false)) {
-          this.x = center(this.tx); this.dir = next;
+        } else if (next.x !== 0 && Math.abs(dy) <= TILE * 0.45 && passable(this.tx + next.x, this.ty, false)) {
+          this.y = cy; this.dir = next;
+        } else if (next.y !== 0 && Math.abs(dx) <= TILE * 0.45 && passable(this.tx, this.ty + next.y, false)) {
+          this.x = cx; this.dir = next;
         }
       }
-      this.movePixels(dt, false);
+      this.moveStep(dt, false);
       this.eat();
     }
     eat() {
+      this.sync();
       const t = tileAt(this.tx, this.ty);
       if (t === PELLET || t === POWER) {
         maze[this.ty][this.tx] = EMPTY;
@@ -320,14 +345,15 @@
       this.dir = startDir;
       this.mode = 'chase';
       this.phase = Math.random() * Math.PI * 2;
-      this.path = []; this.pathStep = 1; this.repathTimer = 0;
     }
     frighten() {
       if (this.mode === 'eaten') return;
       this.mode = 'fright';
-      this.dir = opposite(this.dir);
-      this.repathTimer = 0;
-      this.forceRepath();
+      // Reverse direction (like the original Pac-Man) at the start of frighten
+      const rev = opposite(this.dir);
+      if (rev !== DIRS.none && passable(this.tx + rev.x, this.ty + rev.y, true)) {
+        this.dir = rev;
+      }
     }
     target() {
       if (this.mode === 'eaten') return this.spawn;
@@ -345,127 +371,50 @@
       }
       return Math.hypot(pac.tx - this.tx, pac.ty - this.ty) > 8 ? { x: pac.tx, y: pac.ty } : this.scatter;
     }
-    forceRepath() {
-      this.sync();
-      if (!passable(this.tx, this.ty, true)) {
-        const open = nearestOpen(this.tx, this.ty, true);
-        this.tx = open.x; this.ty = open.y;
-        this.x = center(this.tx); this.y = center(this.ty);
-      }
-      const goal = nearestOpen(this.target().x, this.target().y, true);
-      this.path = findPath({ x: this.tx, y: this.ty }, goal, this.dir);
-      this.pathStep = 1;
-      if (this.path.length > 1) {
-        this.dir = dirBetween(this.path[0], this.path[1]);
-      } else {
-        // No path — pick any open direction so we keep moving
-        const opts = availableDirs(this.tx, this.ty, this.dir, true, true);
-        if (opts.length) this.dir = opts[Math.floor(Math.random() * opts.length)];
-      }
-    }
-    chooseRandomTurn() {
-      const choices = availableDirs(this.tx, this.ty, this.dir, true, false);
-      const dirs = choices.length ? choices : availableDirs(this.tx, this.ty, this.dir, true, true);
-      if (dirs.length) this.dir = dirs[Math.floor(Math.random() * dirs.length)];
-    }
-    // Picks the best direction at an intersection by greedy-distance to target
-    pickBestDir(target) {
+    /**
+     * At a tile center, choose the best direction toward the target.
+     * Classic Pac-Man: list available directions (no reversing), pick the one
+     * with smallest squared distance to the target tile.
+     */
+    pickDirAtIntersection() {
       const opts = availableDirs(this.tx, this.ty, this.dir, true, false);
-      if (!opts.length) {
-        const all = availableDirs(this.tx, this.ty, this.dir, true, true);
-        return all.length ? all[0] : DIRS.none;
+      const dirs = opts.length ? opts : availableDirs(this.tx, this.ty, this.dir, true, true);
+      if (!dirs.length) return DIRS.none;
+      if (this.mode === 'fright') {
+        return dirs[Math.floor(Math.random() * dirs.length)];
       }
-      let best = opts[0], bestDist = Infinity;
-      for (const d of opts) {
+      const tgt = this.target();
+      let best = dirs[0], bestDist = Infinity;
+      // Pac-Man tie-break order: up, left, down, right (matches DIR_ORDER)
+      for (const d of dirs) {
         const nx = this.tx + d.x, ny = this.ty + d.y;
-        const dist = (nx - target.x) ** 2 + (ny - target.y) ** 2;
+        const dist = (nx - tgt.x) ** 2 + (ny - tgt.y) ** 2;
         if (dist < bestDist) { bestDist = dist; best = d; }
       }
       return best;
     }
     update(dt, demo = false) {
       this.phase += dt * 6;
-      this.repathTimer -= dt;
       if (this.mode === 'fright')      this.speed = 76;
       else if (this.mode === 'eaten')  this.speed = 150;
       else                              this.speed = 96 + Math.min(30, level * 5);
       if (demo) this.speed *= 0.85;
 
-      // Decision-making happens at tile centers, NOT every frame.
-      // This is the classic Pac-Man approach: ghost commits to a direction
-      // until it reaches the next tile center, then picks a new direction.
-      if (this.atCenter(2.5)) {
-        this.snap();
-
-        // If we're on the next tile of the current path, advance.
-        if (this.path.length > 1) {
-          const next = this.path[this.pathStep];
-          if (next && this.tx === next.x && this.ty === next.y) {
-            this.pathStep++;
-          }
-        }
-
-        // Need a new path? (no path / consumed it / blocked next step / time-up)
-        const needRepath =
-          this.pathStep >= this.path.length ||
-          this.path.length < 2 ||
-          this.repathTimer <= 0;
-
-        if (this.mode === 'fright') {
-          // Frightened ghosts just turn randomly at intersections
-          const ahead = passable(this.tx + this.dir.x, this.ty + this.dir.y, true);
-          if (!ahead) {
-            this.chooseRandomTurn();
-          } else {
-            const turns = availableDirs(this.tx, this.ty, this.dir, true, false);
-            if (turns.length > 1 && Math.random() < 0.35) {
-              this.dir = turns[Math.floor(Math.random() * turns.length)];
-            }
-          }
-        } else if (needRepath) {
-          this.forceRepath();
-          this.repathTimer = this.mode === 'eaten' ? 0.35 : 0.85;
-        } else {
-          const step = this.path[this.pathStep];
-          if (step) {
-            const newDir = dirBetween({ x: this.tx, y: this.ty }, step);
-            if (newDir !== DIRS.none) this.dir = newDir;
-          }
-        }
-
-        // Safety: if direction points into a wall, pick best toward target
-        if (this.dir === DIRS.none || !passable(this.tx + this.dir.x, this.ty + this.dir.y, true)) {
-          this.dir = this.pickBestDir(this.target());
-        }
+      // Move one step. If we just crossed the center of a tile, decide our
+      // next direction. This is the canonical Pac-Man AI rhythm and avoids
+      // any snap-back behavior because we ONLY snap when a wall blocks us.
+      this.moveStep(dt, true);
+      if (this.justCrossedCenter) {
+        // At new tile center — pick a direction for the OUTGOING edge.
+        // Snap precisely to center so the next moveStep has clean alignment.
+        this.snapToCenter();
+        const next = this.pickDirAtIntersection();
+        if (next !== DIRS.none) this.dir = next;
       }
 
-      const moved = this.movePixels(dt, true);
-      if (!moved) {
-        this.stuck += dt;
-        // Try a fresh direction at the current center
-        this.snap();
-        this.dir = this.pickBestDir(this.target());
-        if (this.dir === DIRS.none) {
-          const opts = availableDirs(this.tx, this.ty, DIRS.none, true, true);
-          if (opts.length) this.dir = opts[0];
-        }
-        this.movePixels(dt, true);
-      } else {
-        this.stuck = 0;
-      }
-
-      // Last-resort teleport: if we've been stuck for half a second, jump out
-      if (this.stuck > 0.5) {
-        const open = nearestOpen(this.tx + 1, this.ty, true);
-        this.tx = open.x; this.ty = open.y;
-        this.x = center(this.tx); this.y = center(this.ty);
-        this.chooseRandomTurn();
-        this.stuck = 0;
-      }
-
-      if (this.mode === 'eaten' && Math.hypot(this.tx - this.spawn.x, this.ty - this.spawn.y) <= 1) {
+      // Eaten ghost returns home: when we're at spawn, switch back to chase
+      if (this.mode === 'eaten' && this.tx === this.spawn.x && this.ty === this.spawn.y) {
         this.mode = 'chase';
-        this.forceRepath();
       }
     }
     draw() {
@@ -505,7 +454,6 @@
     }
   }
 
-  // Find a guaranteed-passable spawn near a desired tile (for ghosts)
   function pickSpawn(preferTx, preferTy) {
     const o = nearestOpen(preferTx, preferTy, true);
     return { x: o.x, y: o.y };
@@ -513,8 +461,6 @@
 
   function spawnActors() {
     pac = new Pac();
-    // SPREAD OUT at known-open corridor tiles, far from each other so they
-    // don't all path to the same intersection and oscillate together.
     const spawnsRaw = [
       { name: 'blinky', t: pickSpawn(1, 5),   color: COLORS.red,    scatter: { x: 26, y: 1  }, dir: DIRS.right },
       { name: 'pinky',  t: pickSpawn(26, 5),  color: COLORS.pink,   scatter: { x: 1,  y: 1  }, dir: DIRS.left  },
@@ -522,8 +468,6 @@
       { name: 'clyde',  t: pickSpawn(26, 26), color: COLORS.orange, scatter: { x: 1,  y: 29 }, dir: DIRS.left  }
     ];
     ghosts = spawnsRaw.map(s => new Ghost(s.name, s.t.x, s.t.y, s.color, s.scatter, s.dir));
-    // Immediately give each ghost a path so they start moving on frame 1
-    ghosts.forEach((g) => g.forceRepath());
   }
 
   function resetGame() {
@@ -647,11 +591,11 @@
     }
     if (state !== 'playing') { updateEffects(dt); return; }
     modeTimer += dt;
-    if (mode === 'scatter' && modeTimer > 7)  { mode = 'chase';   modeTimer = 0; ghosts.forEach((g) => g.forceRepath()); }
-    if (mode === 'chase'   && modeTimer > 20) { mode = 'scatter'; modeTimer = 0; ghosts.forEach((g) => g.forceRepath()); }
+    if (mode === 'scatter' && modeTimer > 7)  { mode = 'chase';   modeTimer = 0; }
+    if (mode === 'chase'   && modeTimer > 20) { mode = 'scatter'; modeTimer = 0; }
     if (powerTimer > 0) {
       powerTimer -= dt;
-      if (powerTimer <= 0) ghosts.forEach((g) => { if (g.mode === 'fright') { g.mode = 'chase'; g.forceRepath(); } });
+      if (powerTimer <= 0) ghosts.forEach((g) => { if (g.mode === 'fright') g.mode = 'chase'; });
     } else { ghostCombo = 0; }
     pac.update(dt);
     ghosts.forEach((g) => g.update(dt));
@@ -675,7 +619,6 @@
           const pts = 200 * Math.pow(2, ghostCombo - 1);
           addScore(pts, g.x, g.y, '+' + pts);
           g.mode = 'eaten';
-          g.forceRepath();
           burst(g.x, g.y, COLORS.cyan, 26);
           beep(520 + ghostCombo * 140, 0.1, 'square', 0.05);
         } else {
@@ -948,9 +891,9 @@
         state,
         fruit: fruit ? { kind: fruit.kind } : null,
         ghosts: ghosts.map((g) => ({
-          name: g.name, tx: g.tx, ty: g.ty, dir: g.dir.name,
-          mode: g.mode, moved: Number(g.movedLastFrame.toFixed(2)),
-          pathLen: g.path.length, pathStep: g.pathStep
+          name: g.name, tx: g.tx, ty: g.ty,
+          x: Math.round(g.x), y: Math.round(g.y),
+          dir: g.dir.name, mode: g.mode
         }))
       };
     }, 'loop');
