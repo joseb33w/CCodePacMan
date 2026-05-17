@@ -6,7 +6,7 @@
   const ROWS = 31;
   const W = COLS * TILE;
   const H = ROWS * TILE;
-  const HIGH_KEY = 'ccode-pacman-high-v9';
+  const HIGH_KEY = 'ccode-pacman-high-v10';
 
   const RAW = [
     '############################',
@@ -117,16 +117,12 @@
     const t = tileAt(tx, ty);
     return t !== WALL && (forGhost || t !== DOOR);
   }
-  function availableDirs(tx, ty, current = DIRS.none, forGhost = false, allowReverse = false) {
-    const rev = opposite(current);
+  function availableDirs(tileX, tileY, currentDir, forGhost, allowReverse) {
+    const rev = opposite(currentDir);
     return DIR_ORDER.filter((d) => {
-      if (!allowReverse && current !== DIRS.none && sameDir(d, rev)) return false;
-      return passable(tx + d.x, ty + d.y, forGhost);
+      if (!allowReverse && currentDir !== DIRS.none && sameDir(d, rev)) return false;
+      return passable(tileX + d.x, tileY + d.y, forGhost);
     });
-  }
-  function dirBetween(a, b) {
-    const dx = Math.sign(b.x - a.x), dy = Math.sign(b.y - a.y);
-    return DIR_ORDER.find((d) => d.x === dx && d.y === dy) || DIRS.none;
   }
 
   function buildMaze() {
@@ -164,128 +160,54 @@
     return { x: 13, y: 23 };
   }
 
-  function findPath(start, goal, firstDir = DIRS.none) {
-    start = nearestOpen(start.x, start.y, true);
-    goal = nearestOpen(goal.x, goal.y, true);
-    const startKey = `${start.x},${start.y}`;
-    const goalKey = `${goal.x},${goal.y}`;
-    if (startKey === goalKey) return [start];
-    const q = [start];
-    const parent = new Map([[startKey, null]]);
-    while (q.length) {
-      const p = q.shift();
-      const pk = `${p.x},${p.y}`;
-      if (pk === goalKey) break;
-      for (const d of DIR_ORDER) {
-        if (parent.get(pk) === null && firstDir !== DIRS.none && sameDir(d, opposite(firstDir))) continue;
-        const nx = p.x + d.x, ny = p.y + d.y, nk = `${nx},${ny}`;
-        if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS || parent.has(nk) || !passable(nx, ny, true)) continue;
-        parent.set(nk, p);
-        q.push({ x: nx, y: ny });
-      }
-    }
-    if (!parent.has(goalKey)) return [start];
-    const path = []; let cur = goal;
-    while (cur) { path.push(cur); cur = parent.get(`${cur.x},${cur.y}`); }
-    return path.reverse();
-  }
-
-  // ───────── PLAYER + GHOSTS share a movement model ─────────
-  class Entity {
-    constructor(tx, ty, color) {
-      this.x = center(tx); this.y = center(ty);
-      this.tx = tx; this.ty = ty;
-      this.dir = DIRS.none; this.next = DIRS.none;
-      this.color = color; this.speed = 96;
-      this.justCrossedCenter = false;
-    }
-    sync() {
-      this.tx = tileFromPx(clamp(this.x, 0, W - 1));
-      this.ty = tileFromPx(clamp(this.y, 0, H - 1));
-    }
-    /**
-     * Returns true if we crossed the center of our current tile in this step.
-     * Used to decide WHEN ghosts re-pick direction (only at tile centers).
-     */
-    moveStep(dt, forGhost) {
-      if (this.dir === DIRS.none) { this.justCrossedCenter = false; return false; }
-      const oldX = this.x, oldY = this.y;
-      let nx = this.x + this.dir.x * this.speed * dt;
-      let ny = this.y + this.dir.y * this.speed * dt;
-      // Wrap-around tunnel
-      if (nx < -TILE / 2) nx = W + TILE / 2;
-      if (nx > W + TILE / 2) nx = -TILE / 2;
-
-      // Look ahead by half a tile in the direction of motion — if the tile
-      // half-way ahead is a wall, stop AT the wall edge (i.e. at the current
-      // tile center). This is the classic Pac-Man wall stop.
-      const aheadX = nx + this.dir.x * (TILE / 2 - 0.5);
-      const aheadY = ny + this.dir.y * (TILE / 2 - 0.5);
-      const aheadTx = tileFromPx(clamp(aheadX, 0, W - 1));
-      const aheadTy = tileFromPx(clamp(aheadY, 0, H - 1));
-      if (!passable(aheadTx, aheadTy, forGhost)) {
-        // Stop at the center of the current tile (don't push into the wall)
-        nx = center(this.tx);
-        ny = center(this.ty);
-      }
-
-      this.x = nx; this.y = ny;
-      this.sync();
-
-      // Detect if we just crossed our tile center.
-      // Cross test: the segment (oldPos -> newPos) contains the center line of
-      // our current tile. For horizontal motion, check whether (cx - oldX) and
-      // (cx - newX) have opposite signs OR newX is exactly at center.
-      const cx = center(this.tx), cy = center(this.ty);
-      this.justCrossedCenter = false;
-      if (this.dir.x !== 0) {
-        const dxOld = oldX - cx, dxNew = nx - cx;
-        // Crossed if sign changed OR we landed on or past center while moving toward it
-        if ((dxOld <= 0 && dxNew >= 0) || (dxOld >= 0 && dxNew <= 0)) this.justCrossedCenter = true;
-      } else if (this.dir.y !== 0) {
-        const dyOld = oldY - cy, dyNew = ny - cy;
-        if ((dyOld <= 0 && dyNew >= 0) || (dyOld >= 0 && dyNew <= 0)) this.justCrossedCenter = true;
-      }
-      return (Math.abs(nx - oldX) + Math.abs(ny - oldY)) > 0.001;
-    }
-    /** Snap exactly to the center of the current tile. Use sparingly. */
-    snapToCenter() {
-      this.sync();
-      this.x = center(this.tx);
-      this.y = center(this.ty);
-    }
-  }
-
-  class Pac extends Entity {
+  // ─────────────── PLAYER ───────────────
+  class Pac {
     constructor() {
-      super(13, 23, COLORS.yellow);
+      this.tx = 13; this.ty = 23;
+      this.x = center(this.tx); this.y = center(this.ty);
       this.dir = DIRS.left; this.next = DIRS.left;
       this.speed = 100 + Math.min(24, level * 3);
       this.mouth = 0;
     }
     update(dt) {
       this.mouth += dt * 10;
-      const next = this.next;
-      if (next !== DIRS.none) {
-        // Can the player turn? Yes if we're close to a tile center perpendicular
-        // to the requested direction AND the next tile in that direction is open.
-        this.sync();
-        const cx = center(this.tx), cy = center(this.ty);
-        const dx = this.x - cx, dy = this.y - cy;
-        const reverse = this.dir !== DIRS.none && sameDir(next, opposite(this.dir));
-        if (reverse && passable(this.tx + next.x, this.ty + next.y, false)) {
-          this.dir = next;
-        } else if (next.x !== 0 && Math.abs(dy) <= TILE * 0.45 && passable(this.tx + next.x, this.ty, false)) {
-          this.y = cy; this.dir = next;
-        } else if (next.y !== 0 && Math.abs(dx) <= TILE * 0.45 && passable(this.tx, this.ty + next.y, false)) {
-          this.x = cx; this.dir = next;
+      const cx = center(this.tx), cy = center(this.ty);
+      const dxOff = this.x - cx, dyOff = this.y - cy;
+
+      // Direction change is allowed near the center perpendicular to the new dir
+      if (this.next !== DIRS.none) {
+        const reverse = this.dir !== DIRS.none && sameDir(this.next, opposite(this.dir));
+        if (reverse && passable(this.tx + this.next.x, this.ty + this.next.y, false)) {
+          this.dir = this.next;
+        } else if (this.next.x !== 0 && Math.abs(dyOff) <= TILE * 0.45 && passable(this.tx + this.next.x, this.ty, false)) {
+          this.y = cy; this.dir = this.next;
+        } else if (this.next.y !== 0 && Math.abs(dxOff) <= TILE * 0.45 && passable(this.tx, this.ty + this.next.y, false)) {
+          this.x = cx; this.dir = this.next;
         }
       }
-      this.moveStep(dt, false);
+
+      // Move
+      if (this.dir !== DIRS.none) {
+        let nx = this.x + this.dir.x * this.speed * dt;
+        let ny = this.y + this.dir.y * this.speed * dt;
+        // Wrap-around
+        if (nx < -TILE / 2) nx = W + TILE / 2;
+        if (nx > W + TILE / 2) nx = -TILE / 2;
+        // Wall check: look one half-tile ahead
+        const ax = nx + this.dir.x * (TILE / 2 - 0.5);
+        const ay = ny + this.dir.y * (TILE / 2 - 0.5);
+        if (passable(tileFromPx(clamp(ax, 0, W - 1)), tileFromPx(clamp(ay, 0, H - 1)), false)) {
+          this.x = nx; this.y = ny;
+        } else {
+          // Stop at current tile center
+          this.x = cx; this.y = cy;
+        }
+        this.tx = tileFromPx(clamp(this.x, 0, W - 1));
+        this.ty = tileFromPx(clamp(this.y, 0, H - 1));
+      }
       this.eat();
     }
     eat() {
-      this.sync();
       const t = tileAt(this.tx, this.ty);
       if (t === PELLET || t === POWER) {
         maze[this.ty][this.tx] = EMPTY;
@@ -336,27 +258,45 @@
     }
   }
 
-  class Ghost extends Entity {
+  // ─────────────── GHOST ───────────────
+  // Model: ghost is ALWAYS moving toward `targetTile`. When pixel position
+  // reaches the center of that tile, we pick a new targetTile (the next step).
+  // This is the canonical Pac-Man rhythm and inherently prevents oscillation.
+  class Ghost {
     constructor(name, tx, ty, color, scatter, startDir) {
-      super(tx, ty, color);
       this.name = name; this.baseColor = color;
+      this.color = color;
       this.scatter = scatter;
-      this.spawn = { x: tx, y: ty };
-      this.dir = startDir;
+      this.spawnTile = { x: tx, y: ty };
+      this.tx = tx; this.ty = ty;
+      this.x = center(tx); this.y = center(ty);
       this.mode = 'chase';
       this.phase = Math.random() * Math.PI * 2;
+      // Outgoing direction (we will commit to it after we leave the spawn tile)
+      this.dir = startDir;
+      // Target tile we're walking TO. Pick a neighbor in startDir or any open neighbor.
+      this.targetTile = this.pickInitialTarget(startDir);
+      this.speed = 96;
+    }
+    pickInitialTarget(startDir) {
+      // Try to head in the requested direction first; otherwise pick any open neighbor
+      const cands = [startDir, ...DIR_ORDER.filter(d => !sameDir(d, startDir))];
+      for (const d of cands) {
+        if (passable(this.tx + d.x, this.ty + d.y, true)) {
+          this.dir = d;
+          return { x: this.tx + d.x, y: this.ty + d.y };
+        }
+      }
+      // Should never happen for a valid spawn
+      return { x: this.tx, y: this.ty };
     }
     frighten() {
       if (this.mode === 'eaten') return;
       this.mode = 'fright';
-      // Reverse direction (like the original Pac-Man) at the start of frighten
-      const rev = opposite(this.dir);
-      if (rev !== DIRS.none && passable(this.tx + rev.x, this.ty + rev.y, true)) {
-        this.dir = rev;
-      }
+      // Reverse: next decision will pick a new target; for now keep current path
     }
-    target() {
-      if (this.mode === 'eaten') return this.spawn;
+    aiTarget() {
+      if (this.mode === 'eaten') return this.spawnTile;
       if (this.mode === 'fright') {
         const corners = [{ x: 1, y: 1 }, { x: 26, y: 1 }, { x: 1, y: 29 }, { x: 26, y: 29 }];
         return corners[(frame + this.name.length) % corners.length];
@@ -372,26 +312,32 @@
       return Math.hypot(pac.tx - this.tx, pac.ty - this.ty) > 8 ? { x: pac.tx, y: pac.ty } : this.scatter;
     }
     /**
-     * At a tile center, choose the best direction toward the target.
-     * Classic Pac-Man: list available directions (no reversing), pick the one
-     * with smallest squared distance to the target tile.
+     * At a tile boundary, pick the next tile to walk into.
+     * Standard Pac-Man rule: no reversing, pick neighbor closest (squared dist) to the AI target.
      */
-    pickDirAtIntersection() {
+    chooseNextTile() {
       const opts = availableDirs(this.tx, this.ty, this.dir, true, false);
       const dirs = opts.length ? opts : availableDirs(this.tx, this.ty, this.dir, true, true);
-      if (!dirs.length) return DIRS.none;
+      if (!dirs.length) {
+        // Dead end with no reverse — should never happen on this map, but stay put.
+        return { x: this.tx, y: this.ty };
+      }
+      let pick;
       if (this.mode === 'fright') {
-        return dirs[Math.floor(Math.random() * dirs.length)];
+        pick = dirs[Math.floor(Math.random() * dirs.length)];
+      } else {
+        const tgt = this.aiTarget();
+        let best = dirs[0], bestDist = Infinity;
+        // DIR_ORDER ensures classic tie-break: up, left, down, right
+        for (const d of dirs) {
+          const nx = this.tx + d.x, ny = this.ty + d.y;
+          const dist = (nx - tgt.x) ** 2 + (ny - tgt.y) ** 2;
+          if (dist < bestDist) { bestDist = dist; best = d; }
+        }
+        pick = best;
       }
-      const tgt = this.target();
-      let best = dirs[0], bestDist = Infinity;
-      // Pac-Man tie-break order: up, left, down, right (matches DIR_ORDER)
-      for (const d of dirs) {
-        const nx = this.tx + d.x, ny = this.ty + d.y;
-        const dist = (nx - tgt.x) ** 2 + (ny - tgt.y) ** 2;
-        if (dist < bestDist) { bestDist = dist; best = d; }
-      }
-      return best;
+      this.dir = pick;
+      return { x: this.tx + pick.x, y: this.ty + pick.y };
     }
     update(dt, demo = false) {
       this.phase += dt * 6;
@@ -400,21 +346,28 @@
       else                              this.speed = 96 + Math.min(30, level * 5);
       if (demo) this.speed *= 0.85;
 
-      // Move one step. If we just crossed the center of a tile, decide our
-      // next direction. This is the canonical Pac-Man AI rhythm and avoids
-      // any snap-back behavior because we ONLY snap when a wall blocks us.
-      this.moveStep(dt, true);
-      if (this.justCrossedCenter) {
-        // At new tile center — pick a direction for the OUTGOING edge.
-        // Snap precisely to center so the next moveStep has clean alignment.
-        this.snapToCenter();
-        const next = this.pickDirAtIntersection();
-        if (next !== DIRS.none) this.dir = next;
-      }
+      // Walk toward target tile center every frame.
+      const goalX = center(this.targetTile.x);
+      const goalY = center(this.targetTile.y);
+      let dx = goalX - this.x, dy = goalY - this.y;
+      const distLeft = Math.hypot(dx, dy);
+      const stepLen = this.speed * dt;
 
-      // Eaten ghost returns home: when we're at spawn, switch back to chase
-      if (this.mode === 'eaten' && this.tx === this.spawn.x && this.ty === this.spawn.y) {
-        this.mode = 'chase';
+      if (distLeft <= stepLen || distLeft < 0.5) {
+        // Arrived at target tile center.
+        this.x = goalX; this.y = goalY;
+        this.tx = this.targetTile.x; this.ty = this.targetTile.y;
+        // Pick the next target tile.
+        this.targetTile = this.chooseNextTile();
+
+        // Eaten → home check
+        if (this.mode === 'eaten' && this.tx === this.spawnTile.x && this.ty === this.spawnTile.y) {
+          this.mode = 'chase';
+        }
+      } else {
+        // Step toward target (normalize direction)
+        this.x += (dx / distLeft) * stepLen;
+        this.y += (dy / distLeft) * stepLen;
       }
     }
     draw() {
@@ -454,20 +407,16 @@
     }
   }
 
-  function pickSpawn(preferTx, preferTy) {
-    const o = nearestOpen(preferTx, preferTy, true);
-    return { x: o.x, y: o.y };
-  }
-
   function spawnActors() {
     pac = new Pac();
-    const spawnsRaw = [
-      { name: 'blinky', t: pickSpawn(1, 5),   color: COLORS.red,    scatter: { x: 26, y: 1  }, dir: DIRS.right },
-      { name: 'pinky',  t: pickSpawn(26, 5),  color: COLORS.pink,   scatter: { x: 1,  y: 1  }, dir: DIRS.left  },
-      { name: 'inky',   t: pickSpawn(1, 26),  color: COLORS.cyan,   scatter: { x: 26, y: 29 }, dir: DIRS.right },
-      { name: 'clyde',  t: pickSpawn(26, 26), color: COLORS.orange, scatter: { x: 1,  y: 29 }, dir: DIRS.left  }
+    const spawn = (preferTx, preferTy) => nearestOpen(preferTx, preferTy, true);
+    const a = spawn(1, 5), b = spawn(26, 5), c = spawn(1, 26), d = spawn(26, 26);
+    ghosts = [
+      new Ghost('blinky', a.x, a.y, COLORS.red,    { x: 26, y: 1  }, DIRS.right),
+      new Ghost('pinky',  b.x, b.y, COLORS.pink,   { x: 1,  y: 1  }, DIRS.left ),
+      new Ghost('inky',   c.x, c.y, COLORS.cyan,   { x: 26, y: 29 }, DIRS.right),
+      new Ghost('clyde',  d.x, d.y, COLORS.orange, { x: 1,  y: 29 }, DIRS.left )
     ];
-    ghosts = spawnsRaw.map(s => new Ghost(s.name, s.t.x, s.t.y, s.color, s.scatter, s.dir));
   }
 
   function resetGame() {
@@ -893,7 +842,8 @@
         ghosts: ghosts.map((g) => ({
           name: g.name, tx: g.tx, ty: g.ty,
           x: Math.round(g.x), y: Math.round(g.y),
-          dir: g.dir.name, mode: g.mode
+          dir: g.dir.name, mode: g.mode,
+          target: g.targetTile
         }))
       };
     }, 'loop');
