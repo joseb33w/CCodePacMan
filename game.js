@@ -13,10 +13,12 @@
   const pauseBtn = $("pause-btn"), soundBtn = $("sound-btn"), quickStart = $("quick-start"), restartBtn = $("restart-btn");
   const modeLabel = $("mode-label"), pelletLabel = $("pellet-label");
   const HIGH_KEY = "pacman-highscore";
+  const SWIPE_THRESHOLD = 8;
   let high = parseInt(localStorage.getItem(HIGH_KEY) || "0", 10);
   let maze = [], pellets = 0, totalPellets = 0, milestones = new Set();
   let pac, ghosts, score = 0, lives = 3, level = 1, state = "ready", timer = 0, mode = "chase", modeTimer = 0;
   let ghostChain = 0, fruit = null, particles = [], popups = [], frame = 0, sound = true, audioCtx = null, swipeStart = null;
+  let heldDir = null, holdRaf = null;
   highEl.textContent = high;
 
   window.addEventListener("error", (event) => {
@@ -94,12 +96,64 @@
   function drawExtras(){ if(fruit){ if(--fruit.t<=0)fruit=null; else{ctx.save();ctx.font="18px Arial";ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowBlur=14;ctx.shadowColor=fruit.c;ctx.fillText(fruit.e,fruit.x,fruit.y+Math.sin(frame/8)*2);ctx.restore();} } particles=particles.filter(p=>p.life>0); particles.forEach(p=>{p.life--;p.x+=p.vx;p.y+=p.vy;p.vx*=.98;p.vy*=.98;ctx.globalAlpha=Math.max(0,p.life/p.max);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}); popups=popups.filter(p=>p.life>0); popups.forEach(p=>{p.life--;p.y-=.45;ctx.globalAlpha=Math.max(0,p.life/58);ctx.fillStyle=p.color;ctx.font="bold 14px Courier New";ctx.textAlign="center";ctx.shadowBlur=8;ctx.shadowColor=p.color;ctx.fillText(p.text,p.x,p.y);ctx.shadowBlur=0;ctx.globalAlpha=1;}); }
   function draw(){ ctx.fillStyle="#000";ctx.fillRect(0,0,canvas.width,canvas.height); drawMaze(); drawExtras(); if(state!=="gameover")pac.draw(); ghosts.forEach(g=>g.draw()); if(state==="win"){ctx.fillStyle="#ffcc00";ctx.font="bold 28px Courier New";ctx.textAlign="center";ctx.fillText("LEVEL CLEAR!",canvas.width/2,ROWS*TILE+30);} }
   function tick(){ frame++; if(state==="playing"){ modeTimer++; if(mode==="scatter"&&modeTimer>420){mode="chase";modeTimer=0;} else if(mode==="chase"&&modeTimer>1200){mode="scatter";modeTimer=0;} pac.update(); ghosts.forEach(g=>g.update()); collisions(); if(pellets<=0){state="win";timer=120;beep(880,.18,"triangle",.07);} if(!ghosts.some(g=>g.mode==="fright"))ghostChain=0; } else if(state==="dying"){pac.update(); if(--timer<=0)loseLife();} else if(state==="win"&&--timer<=0)nextLevel(); updateHud(); labels(); draw(); requestAnimationFrame(tick); }
-  function queue(dir){ if(!pac||!DIRS[dir])return; pac.next=DIRS[dir]; if(state==="ready")start(); }
+  function queue(dir){
+    if(!pac||!DIRS[dir])return;
+    const d=DIRS[dir];
+    pac.next=d;
+    if(state==="ready")start();
+    if(!["playing","ready"].includes(state))return;
+
+    const cx=pac.tx*TILE+TILE/2, cy=pac.ty*TILE+TILE/2;
+    const isReverse=pac.dir!==DIRS.none&&d.x===-pac.dir.x&&d.y===-pac.dir.y;
+    if(isReverse&&!isWall(pac.tx+d.x,pac.ty+d.y)){
+      pac.dir=d;
+      return;
+    }
+
+    // Mobile buttons and short swipes should feel immediate, not like they are
+    // waiting for a slow click. If Pac-Man is close enough to the lane center,
+    // snap to the lane and turn right away.
+    const turnSlack=Math.max(pac.speed*3.2,TILE*.45);
+    if(d.y!==0&&Math.abs(pac.x-cx)<=turnSlack&&!isWall(pac.tx,pac.ty+d.y)){
+      pac.x=cx;
+      pac.dir=d;
+    }else if(d.x!==0&&Math.abs(pac.y-cy)<=turnSlack&&!isWall(pac.tx+d.x,pac.ty)){
+      pac.y=cy;
+      pac.dir=d;
+    }
+  }
   function start(){ if(audioCtx?.state==="suspended")audioCtx.resume(); if(state==="gameover")newGame(); overlay.classList.add("hidden"); state="playing"; timer=0; beep(760,.08,"square",.045); }
   function pause(){ if(state==="playing"){state="paused";overlay.classList.remove("hidden");overlayText.textContent="PAUSED";overlaySub.textContent="Press P, Resume, or GO to keep playing.";startBtn.textContent="RESUME";} else if(state==="paused"){overlay.classList.add("hidden");state="playing";} labels(); }
+  function clearHeldDir(){
+    heldDir=null;
+    if(holdRaf){ cancelAnimationFrame(holdRaf); holdRaf=null; }
+    document.querySelectorAll("[data-dir]").forEach((b)=>b.classList.remove("active"));
+  }
+  function holdLoop(){
+    if(!heldDir){ holdRaf=null; return; }
+    queue(heldDir);
+    holdRaf=requestAnimationFrame(holdLoop);
+  }
+  function setHeldDir(dir,btn){
+    if(!DIRS[dir])return;
+    heldDir=dir;
+    document.querySelectorAll("[data-dir]").forEach((b)=>b.classList.toggle("active", b===btn));
+    queue(dir);
+    if(!holdRaf) holdRaf=requestAnimationFrame(holdLoop);
+  }
   document.addEventListener("keydown",e=>{ const k=e.key.toLowerCase(); if(k==="arrowup"||k==="w")queue("up"); else if(k==="arrowdown"||k==="s")queue("down"); else if(k==="arrowleft"||k==="a")queue("left"); else if(k==="arrowright"||k==="d")queue("right"); else if(k==="enter"||k===" "){ if(["ready","gameover","paused"].includes(state))start(); } else if(k==="p"||k==="escape")pause(); if(["arrowup","arrowdown","arrowleft","arrowright"," "].includes(k))e.preventDefault(); });
-  canvas.addEventListener("pointerdown",e=>{e.preventDefault();swipeStart={x:e.clientX,y:e.clientY};canvas.setPointerCapture?.(e.pointerId);},{passive:false}); canvas.addEventListener("pointermove",e=>{if(!swipeStart)return; const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y; if(Math.hypot(dx,dy)<22)return; queue(Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up")); swipeStart={x:e.clientX,y:e.clientY};},{passive:false}); canvas.addEventListener("pointerup",()=>swipeStart=null); canvas.addEventListener("pointercancel",()=>swipeStart=null);
-  document.querySelectorAll("[data-dir]").forEach(btn=>{btn.addEventListener("pointerdown",e=>{e.preventDefault();btn.classList.add("active");queue(btn.dataset.dir);},{passive:false});btn.addEventListener("pointerup",()=>btn.classList.remove("active"));btn.addEventListener("pointercancel",()=>btn.classList.remove("active"));});
+  canvas.addEventListener("pointerdown",e=>{e.preventDefault();swipeStart={x:e.clientX,y:e.clientY};canvas.setPointerCapture?.(e.pointerId);},{passive:false}); canvas.addEventListener("pointermove",e=>{if(!swipeStart)return; const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y; if(Math.hypot(dx,dy)<SWIPE_THRESHOLD)return; queue(Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up")); swipeStart={x:e.clientX,y:e.clientY};},{passive:false}); canvas.addEventListener("pointerup",()=>swipeStart=null); canvas.addEventListener("pointercancel",()=>swipeStart=null);
+  document.querySelectorAll("[data-dir]").forEach(btn=>{
+    btn.addEventListener("pointerdown",e=>{e.preventDefault();btn.setPointerCapture?.(e.pointerId);setHeldDir(btn.dataset.dir,btn);},{passive:false});
+    btn.addEventListener("pointermove",e=>{
+      e.preventDefault();
+      const el=document.elementFromPoint(e.clientX,e.clientY)?.closest?.("[data-dir]");
+      if(el&&el.dataset.dir!==heldDir)setHeldDir(el.dataset.dir,el);
+    },{passive:false});
+    btn.addEventListener("pointerup",e=>{e.preventDefault();clearHeldDir();},{passive:false});
+    btn.addEventListener("pointercancel",clearHeldDir);
+    btn.addEventListener("lostpointercapture",clearHeldDir);
+  });
   startBtn.addEventListener("click",start); quickStart.addEventListener("click",()=>state==="paused"?pause():start()); pauseBtn.addEventListener("click",pause); restartBtn.addEventListener("click",()=>{newGame();start();}); soundBtn.addEventListener("click",()=>{sound=!sound;soundBtn.textContent=sound?"SOUND ON":"SOUND OFF";soundBtn.setAttribute("aria-pressed",String(sound)); if(sound)beep(900,.08,"triangle",.05);});
   buildMaze(); place(); newGame(); requestAnimationFrame(tick);
 })();
