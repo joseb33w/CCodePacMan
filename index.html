@@ -2,29 +2,60 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pac-Man</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>CCode Pac-Man</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="game-container">
-    <h1 class="title">PAC-MAN</h1>
-    <div class="hud">
-      <div class="hud-item">SCORE: <span id="score">0</span></div>
-      <div class="hud-item">HIGH: <span id="highscore">0</span></div>
-      <div class="hud-item">LIVES: <span id="lives">3</span></div>
-      <div class="hud-item">LEVEL: <span id="level">1</span></div>
+  <main class="game-container">
+    <header class="top-bar">
+      <div>
+        <p class="eyebrow">ARCADE MODE</p>
+        <h1 class="title">PAC-MAN</h1>
+      </div>
+      <div class="actions">
+        <button id="pause-btn" class="mini-btn" type="button">PAUSE</button>
+        <button id="sound-btn" class="mini-btn" type="button" aria-pressed="true">SOUND ON</button>
+      </div>
+    </header>
+
+    <section class="hud">
+      <div class="hud-item">SCORE <span id="score">0</span></div>
+      <div class="hud-item">HIGH <span id="highscore">0</span></div>
+      <div class="hud-item">LIVES <span id="lives">3</span></div>
+      <div class="hud-item">LEVEL <span id="level">1</span></div>
+      <div class="hud-item accent">COMBO <span id="combo">x1</span></div>
+    </section>
+
+    <section class="stage-wrap">
+      <canvas id="game" width="560" height="620" aria-label="Pac-Man maze"></canvas>
+      <div id="overlay" class="overlay hidden">
+        <div id="overlay-text">READY!</div>
+        <p id="overlay-subtitle">Eat pellets, chain ghosts, grab bonus fruit.</p>
+        <button id="start-btn" type="button">START</button>
+      </div>
+    </section>
+
+    <div class="status-strip">
+      <span id="mode-label">Ready</span>
+      <span id="pellet-label">Pellets remaining: 0</span>
     </div>
-    <canvas id="game" width="560" height="620"></canvas>
-    <div id="overlay" class="overlay hidden">
-      <div id="overlay-text">READY!</div>
-      <button id="start-btn">START</button>
-    </div>
+
+    <nav class="touch-controls" aria-label="Touch controls">
+      <button class="dir-btn up" data-dir="up" type="button">▲</button>
+      <button class="dir-btn left" data-dir="left" type="button">◀</button>
+      <button class="dir-btn right" data-dir="right" type="button">▶</button>
+      <button class="dir-btn down" data-dir="down" type="button">▼</button>
+      <button id="quick-start" class="play-btn" type="button">GO</button>
+      <button id="restart-btn" class="play-btn secondary" type="button">RESTART</button>
+    </nav>
+
     <p class="instructions">
-      Use <strong>Arrow Keys</strong> or <strong>WASD</strong> to move.
-      Eat all pellets to win. Power pellets let you eat ghosts!
+      Move with <strong>Arrow Keys</strong>, <strong>WASD</strong>, swipe, or the touch pad. Press <strong>P</strong> to pause. Bonus fruit appears mid-level.
     </p>
-  </div>
+  </main>
   <script src="game.js"></script>
 </body>
 </html>
