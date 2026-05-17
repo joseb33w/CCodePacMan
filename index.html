@@ -5,59 +5,60 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>CCode Pac-Man</title>
-  <link rel="icon" href="data:;base64,=" />
-  <link rel="shortcut icon" href="data:;base64,=" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%23ffd84d'/%3E%3Cpath d='M32 32 61 17v30z' fill='%23000'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="game-container">
-    <header class="top-bar">
-      <div>
-        <p class="eyebrow">ARCADE MODE</p>
-        <h1 class="title">PAC-MAN</h1>
+  <main class="app-shell" aria-label="CCode Pac-Man game">
+    <header class="topbar">
+      <div class="brand">
+        <span class="pill">CCode Arcade</span>
+        <h1>Pac-Man</h1>
       </div>
-      <div class="actions">
-        <button id="pause-btn" class="mini-btn" type="button">PAUSE</button>
-        <button id="sound-btn" class="mini-btn" type="button" aria-pressed="true">SOUND ON</button>
+      <div class="top-actions">
+        <button id="pauseBtn" class="small-btn" type="button">Pause</button>
+        <button id="soundBtn" class="small-btn" type="button" aria-pressed="true">Sound On</button>
       </div>
     </header>
 
-    <section class="hud">
-      <div class="hud-item">SCORE <span id="score">0</span></div>
-      <div class="hud-item">HIGH <span id="highscore">0</span></div>
-      <div class="hud-item">LIVES <span id="lives">3</span></div>
-      <div class="hud-item">LEVEL <span id="level">1</span></div>
-      <div class="hud-item accent">COMBO <span id="combo">x1</span></div>
+    <section class="scoreboard" aria-label="Game stats">
+      <div class="stat"><span>Score</span><strong id="score">0</strong></div>
+      <div class="stat"><span>High</span><strong id="high">0</strong></div>
+      <div class="stat"><span>Lives</span><strong id="lives">3</strong></div>
+      <div class="stat"><span>Level</span><strong id="level">1</strong></div>
+      <div class="stat accent"><span>Mode</span><strong id="mode">Ready</strong></div>
     </section>
 
-    <section class="stage-wrap">
-      <canvas id="game" width="560" height="620" aria-label="Pac-Man maze"></canvas>
-      <div id="overlay" class="overlay hidden">
-        <div id="overlay-text">READY!</div>
-        <p id="overlay-subtitle">Eat pellets, chain ghosts, grab bonus fruit.</p>
-        <button id="start-btn" type="button">START</button>
+    <section class="stage" id="stage">
+      <canvas id="game" width="448" height="496" aria-label="Playable Pac-Man maze"></canvas>
+      <div id="message" class="message">
+        <div id="messageTitle">Ready?</div>
+        <p id="messageText">Use the buttons, swipes, WASD, or arrow keys. Controls respond on touch-down.</p>
+        <button id="startBtn" type="button">Start Game</button>
       </div>
     </section>
 
-    <div class="status-strip">
-      <span id="mode-label">Ready</span>
-      <span id="pellet-label">Pellets remaining: 0</span>
+    <div class="info-row">
+      <span id="pellets">Pellets: 0</span>
+      <span id="hint">Swipe on the maze or hold a direction.</span>
     </div>
 
-    <nav class="touch-controls" aria-label="Touch controls">
-      <button class="dir-btn up" data-dir="up" type="button">▲</button>
-      <button class="dir-btn left" data-dir="left" type="button">◀</button>
-      <button class="dir-btn right" data-dir="right" type="button">▶</button>
-      <button class="dir-btn down" data-dir="down" type="button">▼</button>
-      <button id="quick-start" class="play-btn" type="button">GO</button>
-      <button id="restart-btn" class="play-btn secondary" type="button">RESTART</button>
+    <nav class="controls" aria-label="Game controls">
+      <div class="dpad" aria-label="Movement pad">
+        <button class="dir up" data-dir="up" type="button" aria-label="Move up">▲</button>
+        <button class="dir left" data-dir="left" type="button" aria-label="Move left">◀</button>
+        <button class="dir right" data-dir="right" type="button" aria-label="Move right">▶</button>
+        <button class="dir down" data-dir="down" type="button" aria-label="Move down">▼</button>
+      </div>
+      <div class="control-actions">
+        <button id="goBtn" class="primary" type="button">Go</button>
+        <button id="restartBtn" class="secondary" type="button">Restart</button>
+      </div>
     </nav>
-
-    <p class="instructions">
-      Move with <strong>Arrow Keys</strong>, <strong>WASD</strong>, swipe, or the touch pad. Press <strong>P</strong> to pause. Bonus fruit appears mid-level.
-    </p>
   </main>
+
   <script src="game.js"></script>
 </body>
 </html>

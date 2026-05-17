@@ -1,52 +1,36 @@
 # CCodePacMan
 
-A browser-based Pac-Man clone built with vanilla HTML, CSS, and JavaScript. No frameworks, no build step — just open `index.html` in a browser and play.
+A rebuilt, mobile-first browser Pac-Man game built with vanilla HTML, CSS, and JavaScript.
 
-![Pac-Man](https://img.shields.io/badge/Pac-Man-yellow) ![JavaScript](https://img.shields.io/badge/JS-vanilla-f7df1e)
+## What changed
 
-## Play
-
-1. Clone or download this repo
-2. Open `index.html` directly in your browser
-
-Or serve the folder over HTTP if you prefer:
-
-```bash
-python3 -m http.server 8000
-# then visit http://localhost:8000
-```
+- Rebuilt the app from scratch for clearer mobile readability.
+- Removed the overly dark/translucent UI that made the HUD and buttons hard to see.
+- Added a responsive full-screen layout that fits the game, HUD, and controls inside the phone viewport.
+- Reworked movement so direction buttons and swipes respond immediately on pointer-down.
+- Added hold-to-steer controls, keyboard controls, pause/resume, restart, sound toggle, score, high score, levels, fruit, power pellets, and ghost behavior.
 
 ## Controls
 
-| Action      | Keys                       |
-| ----------- | -------------------------- |
-| Move up     | `Arrow Up` or `W`          |
-| Move down   | `Arrow Down` or `S`        |
-| Move left   | `Arrow Left` or `A`        |
-| Move right  | `Arrow Right` or `D`       |
-| Start / Go  | `Enter` or `Space`         |
+| Action | Controls |
+| --- | --- |
+| Move | Arrow keys, WASD, touch buttons, or swipe on the maze |
+| Start / Resume | Go button, Start button, Enter, or Space |
+| Pause | Pause button, P, or Escape |
+| Restart | Restart button |
 
 ## Gameplay
 
-- Eat all pellets in the maze to clear the level.
-- The four ghosts each have their own personality:
-  - **Blinky** (red) chases Pac-Man directly.
-  - **Pinky** (pink) tries to ambush four tiles ahead.
-  - **Inky** (cyan) flanks based on Blinky's position.
-  - **Clyde** (orange) chases when far, scatters when close.
-- Eat a **power pellet** (the four big dots in the corners) to make ghosts vulnerable for a few seconds. Eaten ghosts retreat to the ghost house.
-- Score: pellet `10`, power pellet `50`, ghost combo `200 / 400 / 800 / 1600`.
-- 3 lives. Game over when you run out.
-- High score is saved to `localStorage`.
+- Eat all pellets to clear the level.
+- Power pellets make ghosts vulnerable.
+- Eat frightened ghosts for combo points.
+- Bonus fruit appears during the level.
+- High score is saved locally in the browser.
 
-## File layout
+## Files
 
+```text
+index.html   App shell and HUD
+style.css    Mobile-first arcade styling
+game.js      Game engine, controls, drawing, and AI
 ```
-index.html   page + HUD overlay
-style.css    arcade styling
-game.js      entire game (maze, entities, AI, render loop)
-```
-
-## License
-
-MIT
