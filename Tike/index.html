@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Tike — Santiago de Chile in 3D</title>
+    <meta
+      name="description"
+      content="An interactive 3D flythrough of a five-day trip to Santiago, Chile — the basin, the Andes, and nine stops across the city."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d1420'/%3E%3Cpath d='M3 23l7-11 5 7 4-6 10 10z' fill='%23e8e6df'/%3E%3Ccircle cx='24' cy='9' r='3.2' fill='%23e8734a'/%3E%3C/svg%3E"
+    />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <div id="loader">
+      <div class="loader-inner">
+        <div class="brand">Tike</div>
+        <div class="sub">Santiago de Chile · 33°27′ S, 70°39′ W</div>
+        <div class="bar"><i id="loader-bar"></i></div>
+        <div class="status" id="status">Waking up…</div>
+      </div>
+    </div>
+
+    <header id="topbar" class="panel hidden">
+      <div class="mark">
+        <span class="brand">Tike</span>
+        <span class="route">SCL · Santiago de Chile</span>
+      </div>
+      <div class="clock">
+        <span id="clock">08:20</span>
+        <span id="tod">morning</span>
+      </div>
+    </header>
+
+    <aside id="stops" class="hidden" aria-label="Itinerary"></aside>
+
+    <section id="card" class="panel hidden">
+      <div class="day" id="card-day"></div>
+      <h1 id="card-title"></h1>
+      <div class="place" id="card-place"></div>
+      <p id="card-text"></p>
+      <div class="progress"><i id="card-progress"></i></div>
+    </section>
+
+    <footer id="controls" class="panel hidden">
+      <button id="btn-prev" title="Previous stop (←)" aria-label="Previous stop">
+        <svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" /></svg>
+      </button>
+      <button id="btn-play" class="primary" title="Play / pause (space)" aria-label="Play or pause">
+        <svg id="icon-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" /></svg>
+        <svg id="icon-play" class="hidden" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg>
+      </button>
+      <button id="btn-next" title="Next stop (→)" aria-label="Next stop">
+        <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg>
+      </button>
+
+      <div class="divider"></div>
+
+      <label class="slider">
+        <span>Hour</span>
+        <input id="time" type="range" min="0" max="24" step="0.1" value="8.3" />
+      </label>
+
+      <div class="divider"></div>
+
+      <button id="btn-free" title="Free look (F)">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="8" />
+          <path d="M4 12h16M12 4c2.5 2.6 2.5 13.4 0 16M12 4c-2.5 2.6-2.5 13.4 0 16" />
+        </svg>
+        <span class="label">Free look</span>
+      </button>
+    </footer>
+
+    <div id="hint" class="hidden">
+      <b>Space</b> play/pause · <b>←→</b> stops · <b>F</b> free look · drag to orbit
+    </div>
+
+    <noscript>
+      <div class="noscript">Tike is a real-time 3D scene and needs JavaScript and WebGL.</div>
+    </noscript>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
